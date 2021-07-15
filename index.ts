@@ -33,16 +33,25 @@ io.on("connection", (socket: ISocket) => {
   });
 
   // create room if doesn't exist
+  // remove user from other rooms
   socket.on("client/join", (roomId) => {
     if (!rooms[roomId]) rooms[roomId] = { file: { length: 0 }, wait: [] };
+    for (const roomId of socket.rooms) {
+      if (roomId !== socket.id) {
+        removeUserFromWait(roomId);
+        socket.leave(roomId);
+      }
+    }
     socket.join(roomId);
     socket.emit("server/join", roomId, rooms[roomId]); // ack
+    socket.to(roomId).emit("server/user-join", socket.id, socket.username); // notify room
   });
 
   socket.on("client/leave", (roomId) => {
     removeUserFromWait(roomId);
     socket.leave(roomId);
     socket.emit("server/leave", roomId); // ack
+    socket.to(roomId).emit("server/user-leave", socket.id, socket.username); // notify room
   });
 
   socket.on("client/message", (message, roomId) => {
@@ -83,15 +92,18 @@ io.on("connection", (socket: ISocket) => {
   socket.on("disconnecting", (reason) => {
     for (const roomId of socket.rooms) {
       if (roomId !== socket.id) {
-        socket.to(roomId).emit("user-left", socket.id);
+        socket.to(roomId).emit("server/user-left", socket.id);
         removeUserFromWait(roomId);
       }
     }
   });
 
   socket.on("disconnect", (reason) => {
-    console.log(reason);
+    console.log("user disconnect: ", reason);
   });
+
+  console.log("user connected", socket.id);
+  socket.username = socket.id;
 });
 
 httpServer.listen(5000);
