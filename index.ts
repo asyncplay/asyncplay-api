@@ -16,12 +16,12 @@ const io = new Server(httpServer, {
 const rooms: { [key: string]: RoomType } = {};
 
 io.on("connection", (socket: ISocket) => {
-  const updateUsersReady = (roomId) => {
+  const updateUsersReady = (roomId: string) => {
     const waitArr = rooms[roomId].wait;
     socket.to(roomId).emit("server/users-ready", waitArr.length === 0, waitArr);
   };
 
-  const removeUserFromWait = (roomId) => {
+  const removeUserFromWait = (roomId: string) => {
     const prevWait = [...rooms[roomId].wait];
     rooms[roomId].wait = rooms[roomId].wait.filter((sid) => sid !== socket.id);
     const currWait = rooms[roomId].wait;
@@ -35,6 +35,7 @@ io.on("connection", (socket: ISocket) => {
   // create room if doesn't exist
   // remove user from other rooms
   socket.on("client/join", (roomId) => {
+    console.log("user joined room: " + roomId);
     if (!rooms[roomId]) rooms[roomId] = { file: { length: 0 }, wait: [] };
     for (const roomId of socket.rooms) {
       if (roomId !== socket.id) {
@@ -48,6 +49,7 @@ io.on("connection", (socket: ISocket) => {
   });
 
   socket.on("client/leave", (roomId) => {
+    console.log("user left room: " + roomId);
     removeUserFromWait(roomId);
     socket.leave(roomId);
     socket.emit("server/leave", roomId); // ack
@@ -103,7 +105,9 @@ io.on("connection", (socket: ISocket) => {
   });
 
   console.log("user connected", socket.id);
+
   socket.username = socket.id;
 });
 
+console.log("starting server on port 5000");
 httpServer.listen(5000);
