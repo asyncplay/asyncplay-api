@@ -1,21 +1,33 @@
 import { createServer } from "http";
 import { Server, Socket } from "socket.io";
 
+type RoomType = { file: { length: number }; wait: string[] };
+
+interface ISocket extends Socket {
+  username?: string;
+}
+
 const httpServer = createServer();
 const io = new Server(httpServer, {
   path: "/socket",
   pingTimeout: 10000,
 });
 
-type RoomType = { file: { length: number }; wait: string[] };
-
 const rooms: { [key: string]: RoomType } = {};
 
-interface ISocket extends Socket {
-  username?: string;
-}
-
 io.on("connection", (socket: ISocket) => {
+  const updateUsersReady = (roomId) => {
+    const waitArr = rooms[roomId].wait;
+    socket.to(roomId).emit("server/users-ready", waitArr.length === 0, waitArr);
+  };
+
+  const removeUserFromWait = (roomId) => {
+    const prevWait = [...rooms[roomId].wait];
+    rooms[roomId].wait = rooms[roomId].wait.filter((sid) => sid !== socket.id);
+    const currWait = rooms[roomId].wait;
+    if (prevWait !== currWait) updateUsersReady(roomId);
+  };
+
   socket.on("client/set-username", (username) => {
     socket.username = username;
   });
@@ -28,6 +40,7 @@ io.on("connection", (socket: ISocket) => {
   });
 
   socket.on("client/leave", (roomId) => {
+    removeUserFromWait(roomId);
     socket.leave(roomId);
     socket.emit("server/leave", roomId); // ack
   });
@@ -57,20 +70,13 @@ io.on("connection", (socket: ISocket) => {
   // 2. server/file-update response
   // if the file didn't match -> user emits not ready
   // if the file matches -> user emits ready
+  // then server sends ack to all room members
   socket.on("client/set-ready", (ready, roomId) => {
-    const prevWait = [...rooms[roomId].wait];
     if (!ready) {
       rooms[roomId].wait.push(socket.id);
+      updateUsersReady(roomId);
     } else {
-      rooms[roomId].wait = rooms[roomId].wait.filter(
-        (sid) => sid !== socket.id
-      );
-    }
-    const currWait = rooms[roomId].wait;
-    if (prevWait !== currWait) {
-      socket
-        .to(roomId)
-        .emit("server/users-ready", currWait.length === 0, currWait);
+      removeUserFromWait(roomId);
     }
   });
 
@@ -78,6 +84,7 @@ io.on("connection", (socket: ISocket) => {
     for (const roomId of socket.rooms) {
       if (roomId !== socket.id) {
         socket.to(roomId).emit("user-left", socket.id);
+        removeUserFromWait(roomId);
       }
     }
   });
